@@ -1,0 +1,113 @@
+import Link from "next/link";
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
+
+import { authOptions } from "@/lib/auth/options";
+import { prisma } from "@/lib/prisma";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+export const dynamic = "force-dynamic";
+
+async function createAction(formData: FormData) {
+  "use server";
+  const name = String(formData.get("name") || "").trim();
+  const symbol = String(formData.get("symbol") || "").trim() || undefined;
+  const precision = Number(formData.get("precision") || 0);
+  if (!name) return;
+
+  await prisma.unit.create({ data: { name, symbol, precision: Number.isFinite(precision) ? precision : 0 } });
+}
+
+async function getData() {
+  const items = await prisma.unit.findMany({ orderBy: { name: "asc" } });
+  return items;
+}
+
+export default async function UnitsPage() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) redirect("/sign-in");
+  const items = await getData();
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Units</h1>
+          <p className="text-sm text-muted-foreground">Units of measure for products.</p>
+        </div>
+        <Button asChild variant="outline">
+          <Link href="/api/export/units">Export CSV</Link>
+        </Button>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Add Unit</CardTitle>
+          <CardDescription>Create a new unit of measure.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={createAction} className="flex flex-wrap items-end gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="name">Name</Label>
+              <Input id="name" name="name" required placeholder="Each" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="symbol">Symbol</Label>
+              <Input id="symbol" name="symbol" placeholder="ea" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="precision">Precision</Label>
+              <Input id="precision" name="precision" type="number" step="1" defaultValue={0} />
+            </div>
+            <Button type="submit">Create</Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>All Units</CardTitle>
+          <CardDescription>Units available for assignment.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Symbol</TableHead>
+                <TableHead>Precision</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((u) => (
+                <TableRow key={u.id}>
+                  <TableCell className="font-medium">{u.name}</TableCell>
+                  <TableCell>{u.symbol ?? "-"}</TableCell>
+                  <TableCell>{u.precision}</TableCell>
+                  <TableCell className="text-right">
+                    <form action={async (fd) => {
+                      "use server";
+                      const id = u.id;
+                      try {
+                        await prisma.unit.delete({ where: { id } });
+                      } catch (e) {
+                        // ignore on failure
+                      }
+                    }}>
+                      <Button type="submit" variant="destructive" size="sm">Delete</Button>
+                    </form>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
